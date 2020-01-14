@@ -1,26 +1,18 @@
 'use strict';
 
-const path = require('path');
-const { promisify } = require('util');
-const fs = require('fs');
-const readdir = promisify(fs.readdir);
-const readFile = promisify(fs.readFile);
 const AWS = require('aws-sdk');
 const s3 = new AWS.S3();
-const dir = 'tmp';
+const db = new AWS.DynamoDB();
 const chromium = require('chrome-aws-lambda');
-const cwd = process.env.LAMBDA_TASK_ROOT || __dirname;
-console.log(cwd);
 let browser;
 
-module.exports.downloadMix = async event => {
-  //console.log(event);
+module.exports.download = async event => {
   const data = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
   const result = await processPage(data);
   if (result == null)
     return { statusCode: 500, body: 'Unable to process ' + data.pageUrl };
 
-  const savedFile = await checkAndSaveFile(result);
+  const savedFile = await checkAndSaveFile({ ...result, data });
   if (savedFile == null)
     return { statusCode: 500, body: 'Unable to save ' + result.name };
 
@@ -71,15 +63,6 @@ async function getData(page, collection) {
 }
 
 async function downloadFromPage(page) {
-	// await page._client.send('Page.setDownloadBehavior', {
-	// 	behavior: 'allow', 
-	// 	downloadPath: path.resolve(cwd, dir)
-	// });
-
-	// const selector = '.download_tracklist';
-	// await page.waitForSelector(selector, { timeout: 1000 });
-  // await page.waitFor(500);
-  // await page.click(selector);
   let tracks = undefined;
   for (let i=0;i < 5;i++) {
     await page.waitFor(90);
@@ -107,7 +90,7 @@ async function downloadFromPage(page) {
   return tracks;
 }
 
-async function checkAndSaveFile({ mix, tracks }) {
+async function checkAndSaveFile({ mix, tracks, data }) {
   try {
     if (typeof mix === 'undefined' || typeof tracks === 'undefined')
       throw new error('Missing mix or tracks data.');
@@ -123,6 +106,9 @@ async function checkAndSaveFile({ mix, tracks }) {
       ContentEncoding: 'utf8'
     }).promise();
     console.log('Successfully uploaded', fileName);
+
+    await recordDownload({ ...data, fileName });
+
     return s3Response != null ? fileName : null;
   } catch (error) {
     console.log(error, error.stack);
@@ -142,4 +128,19 @@ ${mix.notes}\n\n`;
   });
 
   return top + bottom;
+}
+
+async function recordDownload(download) {
+  const response = await db.putItem({
+    TableName: 'ArchiveDownloads',
+    Item: {
+      RequestId: { "S": download.requestId },
+      MixUrl: { "S": download.url },
+      File: { "S": data.fileName },
+      Created: { "N": Date.now().toString() }
+    }
+  }).promise();
+
+  if (response.err)
+    throw response.err;
 }

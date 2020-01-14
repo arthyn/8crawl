@@ -108,7 +108,7 @@ async function downloadMix(request) {
 			}).promise();
 		}
 
-		return { file, fileData: fileData.Body };
+		return { file: file || 'error', fileData: fileData.Body || request };
 	} catch (error) {
 		console.log(request, error.message);
 		console.log(error.stack);
@@ -117,12 +117,18 @@ async function downloadMix(request) {
 			console.log(error.response.data);
 		}
 		
-		return { file: null, fileData: null };
+		return { file: 'error', fileData: request };
 	}
 }
 
 function saveCollectedData(files) {
 	const zip = new admZip();
+	const errors = files.filter(item => item.file !== 'error');
+	const errorFile = { file: 'errored.txt', fileData: errors.map(item => item.fileData).join('\n') };
+
+	if (errors.length > 0)
+		zip.addFile(errorFile.file, Buffer.alloc(errorFile.fileData.length, errorFile.fileData));
+
 	files.forEach(item => {
 		if (item.file != null && typeof item.fileData !== 'undefined')
 			zip.addFile(sanitize(item.file), Buffer.alloc(item.fileData.length, item.fileData));

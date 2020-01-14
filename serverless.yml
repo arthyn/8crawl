@@ -46,8 +46,8 @@ plugins:
   - serverless-offline
 
 # you can define service wide environment variables here
-#  environment:
-#    variable1: value1
+environment:
+  DEV: true
 
 # you can add packaging information here
 #package:
@@ -60,7 +60,7 @@ plugins:
 
 functions:
   downloadMix:
-    handler: handler.downloadMix
+    handler: src/mix.download
 #    The following are a few example events you can configure
 #    NOTE: Please make sure to change your handler code to work with those events
 #    Check the event documentation for details
@@ -73,6 +73,19 @@ functions:
 
     environment:
       BUCKET: hcrawl
+
+  archiveRequest:
+    handler: src/archive.request
+    memorySize: 256
+    timeout: 6
+    events:
+      - http:
+          path: archive/request
+          method: get
+
+  processHistory:
+    handler: src/history.process
+    timeout: 15
 
 resources:
   Resources:
