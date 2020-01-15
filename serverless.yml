@@ -5,23 +5,32 @@ org: svarty1
 provider:
   name: aws
   runtime: nodejs12.x
-  profile: home
 
   iamRoleStatements:
-    - Effect: "Allow"
+    - Effect: Allow
       Action:
-        - "s3:ListBucket"
-        - "s3:GetObject"
-        - "s3:PutObject"
-        - "dynamodb:BatchGetItem"
-        - "dynamodb:GetItem"
-        - "dynamodb:PutItem"
-        - "dynamodb:UpdateItem"
-        - "lambda:InvokeFunction"
+        - s3:ListBucket
       Resource:
         - arn:aws:s3:::hcrawl
+    - Effect: Allow
+      Action:
+        - s3:GetObject
+        - s3:PutObject
+      Resource:
+        - arn:aws:s3:::hcrawl/*
+    - Effect: Allow
+      Action:
+        - dynamodb:BatchGetItem
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+      Resource:
         - arn:aws:dynamodb:us-east-1:895013772455:table/ArchiveRequests
         - arn:aws:dynamodb:us-east-1:895013772455:table/ArchiveDownloads
+    - Effect: Allow
+      Action:
+        - lambda:InvokeFunction
+      Resource:
         - arn:aws:lambda:us-east-1:895013772455:function:hcrawl-dev-archiveRequest
         - arn:aws:lambda:us-east-1:895013772455:function:hcrawl-dev-archiveDownload
         - arn:aws:lambda:us-east-1:895013772455:function:hcrawl-dev-processHistory 
@@ -63,6 +72,8 @@ functions:
       - http:
           path: archive/download
           method: get
+    environment:
+      BUCKET: hcrawl
 
   processHistory:
     handler: src/history.process

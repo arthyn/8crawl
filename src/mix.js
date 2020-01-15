@@ -72,22 +72,34 @@ async function getData(page, collection) {
 }
 
 async function downloadFromPage(page) {
+  // const selector = '.download_tracklist';
+	// await page.waitForSelector(selector, { timeout: 1500 });
+	// await page.click(selector);
+
   let tracks = undefined;
-  for (let i=0;i < 5;i++) {
-    await page.waitFor(90);
+  for (let i=0;i < 3;i++) {
     tracks = await page.evaluate(() => {
       return new Promise((resolve, reject) => {
         let view = window.App.views.mixView;
-        let tracks = undefined;
-        if (typeof view !== 'undefined') {
-          view.mix.withInternationalTracks(() => {
-            tracks = view.mix.tracks.models.map(model => model.attributes);
+        let savedTracks = undefined;
 
-            resolve(tracks);
-          });          
+        //view was undefined so eject
+        if (typeof view === 'undefined') {
+          resolve(undefined);
+          return;
         }
+        
+        if (view.mix.tracks && view.mix.tracks.models) {
+          savedTracks = view.mix.tracks.models.map(model => model.attributes);
+          resolve(savedTracks);
+        } else {
+          view.mix.withInternationalTracks(() => {
+            savedTracks = view.mix.tracks.models.map(model => model.attributes);
+            resolve(savedTracks);
+          }).fail(() => resolve(undefined));
 
-        resolve(undefined);
+          setTimeout(() => resolve(undefined), 350);
+        }
       })
     });
     
@@ -102,7 +114,7 @@ async function downloadFromPage(page) {
 async function checkAndSaveFile({ mix, tracks, data }) {
   try {
     if (typeof mix === 'undefined' || typeof tracks === 'undefined')
-      throw new error('Missing mix or tracks data.');
+      throw new Error('Missing mix or tracks data.');
 
     const mixData = Buffer.from(transformMixData({ mix, tracks }));
     const fileName = `${mix.user}-${mix.name}.txt`.replace('/', '_');
@@ -140,16 +152,17 @@ ${mix.notes}\n\n`;
 }
 
 async function recordDownload(download) {
+  console.log(download)
   const response = await db.putItem({
     TableName: 'ArchiveDownloads',
     Item: {
-      RequestId: { "S": download.requestId },
+      RequestId: { "S": download.id },
       MixUrl: { "S": download.url },
-      File: { "S": data.fileName },
+      File: { "S": download.fileName },
       Created: { "N": Date.now().toString() }
     }
   }).promise();
 
   if (response.err)
-    throw response.err;
+    throw new Error(response.err);
 }
