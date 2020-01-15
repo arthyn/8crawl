@@ -11,8 +11,8 @@ const lambda = new AWS.Lambda({
 
 const hostName = 'https://8tracks.com';
 
-modules.export.process = async event => {
-	const data = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+module.exports.process = async event => {
+	const data = typeof event.body === 'string' ? JSON.parse(event) : event;
 	const success = await collectData(data);
 
 	if (!success)
@@ -30,7 +30,7 @@ async function collectData(data) {
 	count = data.count || 1,
 	total = data.total || 0;
 
-	const pageUrls = await getLinks(pageUrl + '/' + currentPage, '.cover a.mix_url');
+	const pageUrls = await getLinks(data.url + '/' + currentPage, '.cover a.mix_url');
 	console.log(pageUrls);
 
 	try {
@@ -40,14 +40,14 @@ async function collectData(data) {
 			total += pageUrls.length;
 	
 			pageRequests = pageUrls.map(mix => ({
-				pageUrl: hostName + mix, 
+				url: hostName + mix, 
 				count: count++, 
 				total: total,
 				id: data.id
 			}));
 	
 			await map(pageRequests, 50, downloadMix);
-			await updateUrlList(pageUrls);
+			await updateUrlList(pageUrls, data.id);
 			await processNextPage({
 				url: data.url,
 				id: data.id,
@@ -83,7 +83,7 @@ async function getLinks(pageUrl, selector) {
 
 async function downloadMix(request) {
 	await lambda.invoke({
-		FunctionName: 'downloadMix',
+		FunctionName: 'hcrawl-dev-downloadMix',
 		InvocationType: 'Event',
 		LogType: 'Tail',
 		Payload: JSON.stringify(request)
@@ -92,17 +92,19 @@ async function downloadMix(request) {
 
 async function processNextPage(request) {
 	await lambda.invoke({
-		FunctionName: 'processHistory',
+		FunctionName: 'hcrawl-dev-processHistory',
 		InvocationType: 'Event',
 		LogType: 'Tail',
 		Payload: JSON.stringify(request)
 	}).promise();
 }
 
-async function updateUrlList(urls) {
+async function updateUrlList(urls, id) {
 	await db.updateItem({
 		TableName: 'ArchiveRequests',
-		Key: id,
+		Key: {
+			RequestId: { "S": id }
+		},
 		ExpressionAttributeValues: {
 			":urls": { "SS": urls }
 		},
@@ -113,10 +115,12 @@ async function updateUrlList(urls) {
 async function recordTotal(total, id) {
 	await db.updateItem({
 		TableName: 'ArchiveRequests',
-		Key: id,
+		Key: {
+			RequestId: { "S": id }
+		},
 		ExpressionAttributeValues: {
 			":total": { "N": total.toString() }
 		},
-		UpdateExpression: "SET Total = :total"
+		UpdateExpression: "SET TotalMixes = :total"
 	}).promise();
 }

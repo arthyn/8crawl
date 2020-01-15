@@ -1,69 +1,42 @@
-# Welcome to Serverless!
-#
-# This file is the main config file for your service.
-# It's very minimal at this point and uses default values.
-# You can always add more config options for more control.
-# We've included some commented out config examples here.
-# Just uncomment any of them to get that config option.
-#
-# For full config options, check the docs:
-#    docs.serverless.com
-#
-# Happy Coding!
-
 service: hcrawl
-# app and org for use with dashboard.serverless.com
 app: hcrawl-app
 org: svarty1
-
-# You can pin your service to only deploy with a specific Serverless version
-# Check out our docs for more details
-# frameworkVersion: "=X.X.X"
 
 provider:
   name: aws
   runtime: nodejs12.x
+  profile: home
 
-# you can overwrite defaults here
-#  stage: dev
-#  region: us-east-1
   iamRoleStatements:
     - Effect: "Allow"
       Action:
         - "s3:ListBucket"
-      Resource: { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "HcrawlBucket" } ] ]  }
-    - Effect: "Allow"
-      Action:
+        - "s3:GetObject"
         - "s3:PutObject"
+        - "dynamodb:BatchGetItem"
+        - "dynamodb:GetItem"
+        - "dynamodb:PutItem"
+        - "dynamodb:UpdateItem"
+        - "lambda:InvokeFunction"
       Resource:
-        Fn::Join:
-          - ""
-          - - "arn:aws:s3:::"
-            - "Ref" : "HcrawlBucket"
-            - "/*"
+        - arn:aws:s3:::hcrawl
+        - arn:aws:dynamodb:us-east-1:895013772455:table/ArchiveRequests
+        - arn:aws:dynamodb:us-east-1:895013772455:table/ArchiveDownloads
+        - arn:aws:lambda:us-east-1:895013772455:function:hcrawl-dev-archiveRequest
+        - arn:aws:lambda:us-east-1:895013772455:function:hcrawl-dev-archiveDownload
+        - arn:aws:lambda:us-east-1:895013772455:function:hcrawl-dev-processHistory 
+        - arn:aws:lambda:us-east-1:895013772455:function:hcrawl-dev-downloadMix
 
 plugins:
   - serverless-offline
 
-# you can define service wide environment variables here
 environment:
-  DEV: true
-
-# you can add packaging information here
-#package:
-#  include:
-#    - include-me.js
-#    - include-me-dir/**
-#  exclude:
-#    - exclude-me.js
-#    - exclude-me-dir/**
+  DEV: dev
+  APP: hcrawl
 
 functions:
   downloadMix:
     handler: src/mix.download
-#    The following are a few example events you can configure
-#    NOTE: Please make sure to change your handler code to work with those events
-#    Check the event documentation for details
     memorySize: 2048
     timeout: 15
     events:
@@ -83,13 +56,14 @@ functions:
           path: archive/request
           method: get
 
+  archiveDownload:
+    handler: src/archive.download
+    timeout: 6
+    events:
+      - http:
+          path: archive/download
+          method: get
+
   processHistory:
     handler: src/history.process
     timeout: 15
-
-resources:
-  Resources:
-    HcrawlBucket:
-      Type: AWS::S3::Bucket
-      Properties:
-        BucketName: hcrawl

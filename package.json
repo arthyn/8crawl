@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "adm-zip": "^0.4.13",
     "async": "^3.1.0",
     "aws-sdk": "^2.601.0",
     "axios": "^0.19.1",
@@ -20,7 +21,7 @@
     "uuid": "^3.3.3"
   },
   "devDependencies": {
-    "adm-zip": "^0.4.13",
+    "node.extend": "^2.0.2",
     "puppeteer": "^2.0.0",
     "serverless-dynamodb-local": "^0.2.38",
     "serverless-offline": "^5.12.1"

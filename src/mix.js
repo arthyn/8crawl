@@ -7,7 +7,16 @@ const chromium = require('chrome-aws-lambda');
 let browser;
 
 module.exports.download = async event => {
-  const data = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+  let data;
+  if (typeof event.body === 'undefined') {
+    data = event;
+  } else if (typeof event.body === 'string') {
+    data = JSON.parse(event.body)
+  } else {
+    data = event.body;
+  }
+  console.log(data, event);
+
   const result = await processPage(data);
   if (result == null)
     return { statusCode: 500, body: 'Unable to process ' + data.pageUrl };
@@ -22,7 +31,7 @@ module.exports.download = async event => {
   };
 };
 
-async function processPage({ pageUrl, count, total }) {
+async function processPage({ url, count, total }) {
 	try {
     browser = browser || await chromium.puppeteer.launch({
       executablePath: await chromium.executablePath,
@@ -31,9 +40,9 @@ async function processPage({ pageUrl, count, total }) {
       headless: chromium.headless,
     });
 		const page = await browser.newPage();
-		await page.goto(pageUrl);
+		await page.goto(url);
 		console.log(`Processing ${count} of ${total}`);
-		console.log(`opened the page: ${pageUrl}`);
+		console.log(`opened the page: ${url}`);
 		
 		const data = await getData(page);
 		const tracks = await downloadFromPage(page);
@@ -41,7 +50,7 @@ async function processPage({ pageUrl, count, total }) {
 
     return { mix: data, tracks };
 	} catch (error) {
-    console.log(`failed to process the page: ${pageUrl} with the error: ${error}`);
+    console.log(`failed to process the page: ${url} with the error: ${error}`);
     return null;
 	}	
 }
@@ -96,7 +105,7 @@ async function checkAndSaveFile({ mix, tracks, data }) {
       throw new error('Missing mix or tracks data.');
 
     const mixData = Buffer.from(transformMixData({ mix, tracks }));
-    const fileName = `${mix.user}-${mix.name}.txt`;
+    const fileName = `${mix.user}-${mix.name}.txt`.replace('/', '_');
 
     const s3Response = await s3.putObject({
       Bucket: process.env.BUCKET,
