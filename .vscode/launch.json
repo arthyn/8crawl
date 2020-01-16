@@ -7,15 +7,18 @@
 		{
 			"type": "node",
 			"request": "launch",
-			"name": "Launch Program",
-			"skipFiles": [
-				"<node_internals>/**"
-			],
-			"program": "${workspaceFolder}/cli.js",
-			"args": [
-				"https://8tracks.com/mix_sets/listened:116392", 
-				"history"
-            ],
+			"name": "Debug Serverless",
+			"cwd": "${workspaceFolder}",
+           "runtimeExecutable": "npm",
+           "runtimeArgs": [
+               "run",
+               "debug"
+           ],
+           "outFiles": [
+               "${workspaceFolder}/handler.js"
+           ],
+           "port": 9229,
+           "sourceMaps": true
 		}
 	]
 }

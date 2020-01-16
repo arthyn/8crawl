@@ -1,10 +1,11 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const map = require('async/mapLimit');
-const AWS = require('aws-sdk');
+const awsXRay = require('aws-xray-sdk');
+const AWS = awsXRay.captureAWS(require('aws-sdk'));
 const db = new AWS.DynamoDB();
 const lambda = new AWS.Lambda({
-	endpoint: process.env.DEV
+	endpoint: process.env.SLS_DEBUG
     ? 'http://localhost:3000'
     : 'https://lambda.us-east-1.amazonaws.com',
 });

@@ -1,6 +1,7 @@
 'use strict';
 
-const AWS = require('aws-sdk');
+const awsXRay = require('aws-xray-sdk');
+const AWS = awsXRay.captureAWS(require('aws-sdk'));
 const s3 = new AWS.S3();
 const db = new AWS.DynamoDB();
 const chromium = require('chrome-aws-lambda');

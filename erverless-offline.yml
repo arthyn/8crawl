@@ -51,6 +51,8 @@ provider:
 plugins:
   - serverless-offline
   - serverless-plugin-tracing
+  - serverless-dynamodb-local
+  - serverless-s3-local
 
 environment:
   DEV: dev
@@ -111,3 +113,63 @@ functions:
       exclude:
         - node_modules/puppeteer-core/**
         - node_modules/chrome-aws-lambda/**
+
+resources:
+  Resources:
+    HcrawlBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+          BucketName: hcrawl 
+    ArchiveRequests:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ArchiveRequests
+        AttributeDefinitions:
+          - AttributeName: RequestId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: RequestId
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+    ArchiveDownloads:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ArchiveDownloads
+        AttributeDefinitions:
+          - AttributeName: RequestId
+            AttributeType: S
+          - AttributeName: MixUrl
+            AttributeType: S
+        KeySchema:
+          - AttributeName: RequestId
+            KeyType: HASH
+          - AttributeName: MixUrl
+            KeyType: RANGE
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+
+custom:
+  s3:
+    port: 8001
+    directory: /tmp
+  dynamodb:
+    stages:
+      - dev
+    start:
+      port: 8000
+      inMemory: true
+      heapInitial: 200m
+      heapMax: 1g
+      migrate: true
+      seed: true
+      convertEmptyValues: true
+    seed:
+      domain:
+        sources:
+          - table: ArchiveRequests
+            sources: [./lib/archive-requests.json]
+          - table: ArchiveDownloads
+            sources: [./lib/archive-downloads.json]

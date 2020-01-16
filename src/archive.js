@@ -2,12 +2,22 @@
 
 const uuid = require('uuid/v4');
 const AdmZip = require('adm-zip');
-const AWS = require('aws-sdk');
+const sanitize = require('sanitize-filename');
+const awsXRay = require('aws-xray-sdk');
+const AWS = awsXRay.captureAWS(require('aws-sdk'));
+awsXRay.setContextMissingStrategy("LOG_ERROR");
 const map = require('async/mapLimit');
-const s3 = new AWS.S3();
-const db = new AWS.DynamoDB();
+const s3Config = !process.env.SLS_DEBUG ? {} : {
+    s3ForcePathStyle: true,
+    accessKeyId: 'S3RVER', // This specific key is required when working offline
+    secretAccessKey: 'S3RVER',
+    endpoint: new AWS.Endpoint('http://localhost:8001'),
+  }
+const s3 = new AWS.S3(s3Config);
+const dynamodb = require('serverless-dynamodb-client');
+const db = dynamodb.doc;
 const lambda = new AWS.Lambda({
-	endpoint: process.env.DEV
+	endpoint: process.env.SLS_DEBUG
     ? 'http://localhost:3000'
     : 'https://lambda.us-east-1.amazonaws.com',
 });
@@ -17,13 +27,13 @@ module.exports.request = async event => {
 	const id = uuid();
 
 	try {
-		const response = await db.putItem({
+		const response = await db.put({
 			TableName: 'ArchiveRequests',
 			Item: {
-				RequestId: { "S": id },
-				Url: { "S": data.url },
-				Type: { "S": data.type },
-				Created: { "N": Date.now().toString() }
+				RequestId: id,
+				Url: data.url,
+				Type: data.type,
+				Created: Date.now().toString()
 			}
 		}).promise();
 	
@@ -65,57 +75,61 @@ module.exports.request = async event => {
 module.exports.download = async event => {
 	const data = typeof event.queryStringParameters === 'string' ? JSON.parse(event.queryStringParameters) : event.queryStringParameters;
 	const id = data.id;
+	console.log(data);
 	if (id == null)
 		return { 
 			statusCode: 500, 
-			body: {
+			body: JSON.stringify({
 				message: 'Unable to find archive.'
-			}
+			})
 		}
-	
+	console.log(await s3.listObjects({
+		Bucket: 'hcrawl'
+	}).promise());
 	const downloads = await getDownloads(id);
 	const isAvailable = await checkIfArchiveReady(id, downloads);
 	if (!isAvailable)
-		return { statusCode: 500, body: { message: 'Not ready.' } }
+		return { statusCode: 500, body: JSON.stringify({ message: 'Not ready.' }) }
 
 	const zip = createZip(downloads);
-	const fileName = await uploadZip(zip);
+	const fileName = await uploadZip(id, zip);
 	if (fileName == null)
-		return { statusCode: 500, body: { message: 'Unable to upload zip.'} }
+		return { statusCode: 500, body: JSON.stringify({ message: 'Unable to upload zip.'}) }
 
-	const signedUrl = getSignedUrl(filename);
+	const signedUrl = getSignedUrl(fileName);
 	return {
 		statusCode: 200,
-		body: {
+		body: JSON.stringify({
 			url: signedUrl,
 			message: 'success'
-		}
+		})
 	}
 }
 
 async function getDownloads(id) {
-	const downloadItems = await db.batchGetItem({
-		RequestItems: {
-			ArchiveDownloads: {
-				Keys: {
-					RequestId: { S: id }
-				}
-			}
+	const downloadItems = await db.query({
+		TableName: 'ArchiveDownloads',
+		KeyConditionExpression: 'RequestId = :requestId',
+		ExpressionAttributeValues: {
+			':requestId': id
 		}
 	}).promise();
 
-	return await map(downloadItems, 50, getDownload);
+	if (downloadItems == null)
+		return null;
+
+	return await map(downloadItems.Items, 50, getDownload);
 }
 
 async function checkIfArchiveReady(id, downloads) {
-	const request = await db.getItem({
+	const request = await db.get({
 		TableName: 'ArchiveRequests',
-		Keys: {
-			RequestId: { S: id }
+		Key: {
+			RequestId: id
 		}
 	}).promise();
 
-	return request.TotalMixes === downloads.length;
+	return request != null && request.Item.TotalMixes === downloads.length;
 }
 
 async function getDownload(download) {
@@ -140,8 +154,8 @@ async function getDownload(download) {
 
 function createZip(downloads) {
 	const zip = new AdmZip();
-	const errors = downloads.filter(item => item.File !== 'error');
-	const errorFile = { file: 'errored.txt', fileData: errors.map(item => item.fileData).join('\n') };
+	const errors = downloads.filter(item => item.File === 'error');
+	const errorFile = { File: 'errored.txt', fileData: errors.map(item => item.fileData).join('\n') };
 
 	if (errors.length > 0)
 		zip.addFile(errorFile.file, Buffer.alloc(errorFile.fileData.length, errorFile.fileData));
