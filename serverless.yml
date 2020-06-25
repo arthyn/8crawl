@@ -4,6 +4,8 @@ org: svarty1
 
 package:
   individually: true
+  exclude:
+    - .dynamodb/**
 
 provider:
   name: aws
@@ -72,6 +74,10 @@ functions:
       exclude:
         - node_modules/cheerio/**
         - node_modules/axios/**
+        - node_modules/async/**
+        - node_modules/adm-zip/**
+        - node_modules/uuid/**
+        - node_modules/sanitize-filename/**
 
   archiveRequest:
     handler: src/archive.request
@@ -81,6 +87,7 @@ functions:
       - http:
           path: archive/request
           method: get
+          cors: true
     package:
       exclude:
         - node_modules/puppeteer-core/**
@@ -95,6 +102,7 @@ functions:
       - http:
           path: archive/download
           method: get
+          cors: true
     environment:
       BUCKET: hcrawl
     package:

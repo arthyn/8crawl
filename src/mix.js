@@ -1,7 +1,8 @@
 'use strict';
 
 const awsXRay = require('aws-xray-sdk');
-const AWS = awsXRay.captureAWS(require('aws-sdk'));
+const aws = require('aws-sdk');
+const AWS = process.env.IS_LOCAL ? aws : awsXRay.captureAWS(aws);
 const s3 = new AWS.S3();
 const db = new AWS.DynamoDB();
 const chromium = require('chrome-aws-lambda');
@@ -19,10 +20,13 @@ module.exports.download = async event => {
   console.log(data, event);
 
   const result = await processPage(data);
-  if (result == null)
+  if (result == null) {
+    await recordDownload({ ...data, fileName: 'error' });
     return { statusCode: 500, body: 'Unable to process ' + data.pageUrl };
+  }
 
   const savedFile = await checkAndSaveFile({ ...result, data });
+  await recordDownload({ ...data, fileName: savedFile });
   if (savedFile == null)
     return { statusCode: 500, body: 'Unable to save ' + result.name };
 
@@ -59,12 +63,12 @@ async function processPage({ url, count, total }) {
 async function getData(page, collection) {
 	let pageData = {};
 
-	pageData.collection = collection;
-	pageData.name = await page.$$eval('#mix_name', title => title[0].textContent.trim());
-	pageData.user = await page.$$eval('#user_byline .propername', user => user[0].textContent.trim());
-	pageData.tags = await page.$$eval('#mix_tags_display .tag', tags => tags.map(tag => tag.textContent.trim()));
+  pageData.collection = collection;
+	pageData.name = await page.$$eval('#mix_name', title => title[0] != null ? title[0].textContent.trim() : '');
+	pageData.user = await page.$$eval('#user_byline .propername', user => user[0] != null ? user[0].textContent.trim() : '');
+	pageData.tags = await page.$$eval('#mix_tags_display .tag', tags => tags.map(tag => tag != null ? tag.textContent.trim() : ''));
 	pageData.notes = await page.$$eval('#description_html', description => {
-		const text = description[0].textContent;
+		const text = description[0] != null ? description[0].textContent.trim() : '';
 		const trimmedNotes = text.substring(0, text.indexOf('Download Tracklist'));
 		return trimmedNotes.trim();
 	});
@@ -78,7 +82,7 @@ async function downloadFromPage(page) {
 	// await page.click(selector);
 
   let tracks = undefined;
-  for (let i=0;i < 3;i++) {
+  for (let i=0;i < 5;i++) {
     tracks = await page.evaluate(() => {
       return new Promise((resolve, reject) => {
         let view = window.App.views.mixView;
@@ -113,12 +117,13 @@ async function downloadFromPage(page) {
 }
 
 async function checkAndSaveFile({ mix, tracks, data }) {
+  let fileName = `${mix.user}-${mix.name}.txt`.replace('/', '_');
+
   try {
-    if (typeof mix === 'undefined' || typeof tracks === 'undefined')
-      throw new Error('Missing mix or tracks data.');
+    if (typeof tracks === 'undefined')
+      throw new Error('Missing tracks data.');
 
     const mixData = Buffer.from(transformMixData({ mix, tracks }));
-    const fileName = `${mix.user}-${mix.name}.txt`.replace('/', '_');
 
     const s3Response = await s3.putObject({
       Bucket: process.env.BUCKET,
@@ -129,13 +134,13 @@ async function checkAndSaveFile({ mix, tracks, data }) {
     }).promise();
     console.log('Successfully uploaded', fileName);
 
-    await recordDownload({ ...data, fileName });
-
-    return s3Response != null ? fileName : null;
+    fileName = s3Response != null ? fileName : 'error';
   } catch (error) {
     console.log(error, error.stack);
-    return null;
-  }  
+    fileName = 'error';
+  }
+
+  return fileName;
 }
 
 function transformMixData({ mix, tracks}) {

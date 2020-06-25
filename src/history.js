@@ -1,9 +1,10 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const map = require('async/mapLimit');
+const aws = require('aws-sdk');
 const awsXRay = require('aws-xray-sdk');
-const AWS = awsXRay.captureAWS(require('aws-sdk'));
-const db = new AWS.DynamoDB();
+const AWS = process.env.IS_LOCAL ? aws : awsXRay.captureAWS(aws);
+const db = new AWS.DynamoDB.DocumentClient();
 const lambda = new AWS.Lambda({
 	endpoint: process.env.SLS_DEBUG
     ? 'http://localhost:3000'
@@ -38,17 +39,17 @@ async function collectData(data) {
 		if (pageUrls == null) {
 			return false;
 		} else if (pageUrls.length) {
-			total += pageUrls.length;
+			const response = await updateUrlList(pageUrls, data.id);
+			total = response.Attributes.Mixes.values.length;
 	
 			pageRequests = pageUrls.map(mix => ({
 				url: hostName + mix, 
 				count: count++, 
-				total: total,
+				total,
 				id: data.id
 			}));
 	
 			await map(pageRequests, 50, downloadMix);
-			await updateUrlList(pageUrls, data.id);
 			await processNextPage({
 				url: data.url,
 				id: data.id,
@@ -101,26 +102,27 @@ async function processNextPage(request) {
 }
 
 async function updateUrlList(urls, id) {
-	await db.updateItem({
+	return await db.update({
 		TableName: 'ArchiveRequests',
 		Key: {
-			RequestId: { "S": id }
+			RequestId: id
 		},
 		ExpressionAttributeValues: {
-			":urls": { "SS": urls }
+			":urls": db.createSet(urls)
 		},
-		UpdateExpression: "ADD Mixes :urls"
+		UpdateExpression: "ADD Mixes :urls",
+		ReturnValues: "UPDATED_NEW"
 	}).promise();
 }
 
 async function recordTotal(total, id) {
-	await db.updateItem({
+	await db.update({
 		TableName: 'ArchiveRequests',
 		Key: {
-			RequestId: { "S": id }
+			RequestId: id
 		},
 		ExpressionAttributeValues: {
-			":total": { "N": total.toString() }
+			":total": total.toString()
 		},
 		UpdateExpression: "SET TotalMixes = :total"
 	}).promise();

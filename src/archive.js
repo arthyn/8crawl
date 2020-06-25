@@ -3,8 +3,9 @@
 const uuid = require('uuid/v4');
 const AdmZip = require('adm-zip');
 const sanitize = require('sanitize-filename');
+const aws = require('aws-sdk');
 const awsXRay = require('aws-xray-sdk');
-const AWS = awsXRay.captureAWS(require('aws-sdk'));
+const AWS = process.env.IS_LOCAL ? aws : awsXRay.captureAWS(aws);
 awsXRay.setContextMissingStrategy("LOG_ERROR");
 const map = require('async/mapLimit');
 const s3Config = !process.env.SLS_DEBUG ? {} : {
@@ -14,8 +15,7 @@ const s3Config = !process.env.SLS_DEBUG ? {} : {
     endpoint: new AWS.Endpoint('http://localhost:8001'),
   }
 const s3 = new AWS.S3(s3Config);
-const dynamodb = require('serverless-dynamodb-client');
-const db = dynamodb.doc;
+const db = new AWS.DynamoDB.DocumentClient();
 const lambda = new AWS.Lambda({
 	endpoint: process.env.SLS_DEBUG
     ? 'http://localhost:3000'
@@ -62,13 +62,21 @@ module.exports.request = async event => {
 
 		return {
 			statusCode: 500,
-			body: 'Unable to initiate archive request.'
+			body: 'Unable to initiate archive request.',
+			headers: {
+			  'Access-Control-Allow-Origin': '*',
+			  'Access-Control-Allow-Credentials': true,
+			}
 		};
 	}
 
 	return {
 		statusCode: 200,
-		body: JSON.stringify(id)
+		body: JSON.stringify(id),
+		headers: {
+		  'Access-Control-Allow-Origin': '*',
+		  'Access-Control-Allow-Credentials': true,
+		}
 	}	
 }
 
@@ -87,22 +95,44 @@ module.exports.download = async event => {
 		Bucket: 'hcrawl'
 	}).promise());
 	const downloads = await getDownloads(id);
-	const isAvailable = await checkIfArchiveReady(id, downloads);
-	if (!isAvailable)
-		return { statusCode: 500, body: JSON.stringify({ message: 'Not ready.' }) }
+	const readyData = await checkIfArchiveReady(id, downloads);
+	if (!readyData.ready)
+		return { 
+			statusCode: 200, 
+			body: JSON.stringify({ 
+				message: 'Not ready.',
+				...readyData
+			}),
+			headers: {
+			  'Access-Control-Allow-Origin': '*',
+			  'Access-Control-Allow-Credentials': true,
+			} 
+		}
 
 	const zip = createZip(downloads);
 	const fileName = await uploadZip(id, zip);
 	if (fileName == null)
-		return { statusCode: 500, body: JSON.stringify({ message: 'Unable to upload zip.'}) }
+		return { 
+			statusCode: 500, 
+			body: JSON.stringify({ message: 'Unable to upload zip.'}),
+			headers: {
+			  'Access-Control-Allow-Origin': '*',
+			  'Access-Control-Allow-Credentials': true,
+			}
+		}
 
 	const signedUrl = getSignedUrl(fileName);
 	return {
 		statusCode: 200,
 		body: JSON.stringify({
 			url: signedUrl,
-			message: 'success'
-		})
+			message: 'success',
+			...readyData
+		}),
+		headers: {
+		  'Access-Control-Allow-Origin': '*',
+		  'Access-Control-Allow-Credentials': true,
+		}
 	}
 }
 
@@ -129,7 +159,11 @@ async function checkIfArchiveReady(id, downloads) {
 		}
 	}).promise();
 
-	return request != null && request.Item.TotalMixes === downloads.length;
+	return {
+		ready: request != null && request.Item.TotalMixes == downloads.length,
+		total: request.Item.TotalMixes,
+		count: downloads.length
+	};
 }
 
 async function getDownload(download) {
